@@ -1,48 +1,46 @@
-import {TOPK_COUNTS} from '../data';
+/**
+ * Returns true if an aggregation is valid and false if not
+ *
+ * @param {Array} aggregation Aggregation in external Snuba format
+ * @param {Object} cols List of column objects
+ * @param {String} cols.name Column name
+ * @param {String} cols.type Type of column
+ * @returns {Boolean} True if valid aggregatoin, false if not
+ */
+export function isValidAggregation(aggregation, cols) {
+  const columns = new Set(cols.map(({name}) => name));
+  const topKRegex = /topK\((\d+)\)/;
 
-/*
-* Returns options for aggregation field dropdown
-*/
+  const [func, col] = aggregation;
 
-export function getAggregateOptions(columns) {
-  const topLevel = [
-    {value: 'count', label: 'count'},
-    {value: 'uniq', label: 'uniq(...)'},
-    {value: 'topK', label: 'topK(...)'},
-  ];
+  if (!func) {
+    return false;
+  }
 
-  const uniq = columns.map(({name}) => ({
-    value: `uniq_${name}`,
-    label: `uniq(${name})`,
-  }));
+  if (func === 'count()') {
+    return col === null;
+  }
 
-  const topKCounts = TOPK_COUNTS.map(num => ({
-    value: `topK_${num}`,
-    label: `topK(${num})(...)`,
-  }));
+  if (func === 'uniq' || func.match(topKRegex)) {
+    return columns.has(col);
+  }
 
-  const topKValues = TOPK_COUNTS.reduce((acc, num) => {
-    return [
-      ...acc,
-      ...columns.map(({name}) => ({
-        value: `topK_${num}_${name}`,
-        label: `topK(${num})(${name})`,
-      })),
-    ];
-  }, []);
+  if (func === 'avg') {
+    const validCols = new Set(
+      cols.filter(({type}) => type === 'number').map(({name}) => name)
+    );
+    return validCols.has(col);
+  }
 
-  return {
-    topLevel,
-    uniq,
-    topKCounts,
-    topKValues,
-  };
+  return false;
 }
 
-/*
-* Converts from external representation (array) to internal format (string)
-* for dropdown.
-*/
+/**
+* Converts aggregation from external Snuba format to internal format for dropdown
+*
+* @param {Array} external Aggregation in external Snuba format
+* @return {String} Aggregation in internal format
+**/
 export function getInternal(external) {
   const [func, col] = external;
 
@@ -55,35 +53,53 @@ export function getInternal(external) {
   }
 
   if (func === 'uniq') {
-    return `uniq_${col}`;
+    return `uniq(${col})`;
+  }
+
+  if (func === 'avg') {
+    return `avg(${col})`;
   }
 
   if (func.startsWith('topK')) {
     const count = func.match(/topK\((\d+)\)/)[1];
-    return `topK_${count}_${col}`;
+    return `topK(${count})(${col})`;
   }
 
   return func;
 }
 
-/*
-* Converts from external representation (string value from dropdown) to external format (array)
+/**
+* Converts aggregation internal string format to external Snuba representation
+*
+* @param {String} internal Aggregation in internal format
+* @return {Array} Aggregation in external Snuba format
 */
 export function getExternal(internal) {
-  const uniqRegex = /^uniq_(.+)$/;
-  const topKRegex = /^topK_(\d+)_(.+)$/;
+  const uniqRegex = /^uniq\((.+)\)$/;
+  const avgRegex = /^avg\((.+)\)$/;
+  const topKRegex = /^topK\((\d+)\)\((.+)\)$/;
 
   if (internal === 'count') {
     return ['count()', null, 'count'];
   }
 
   if (internal.match(uniqRegex)) {
-    return ['uniq', internal.match(uniqRegex)[1], internal];
+    const column = internal.match(uniqRegex)[1];
+    return ['uniq', column, `uniq_${column}`];
+  }
+
+  if (internal.match(avgRegex)) {
+    const column = internal.match(avgRegex)[1];
+    return ['avg', column, `avg_${column}`];
   }
 
   const topKMatch = internal.match(topKRegex);
   if (topKMatch) {
-    return [`topK(${parseInt(topKMatch[1], 10)})`, topKMatch[2], internal];
+    return [
+      `topK(${parseInt(topKMatch[1], 10)})`,
+      topKMatch[2],
+      `topK_${topKMatch[1]}_${topKMatch[2]}`,
+    ];
   }
 
   return internal;

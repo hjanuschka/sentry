@@ -77,6 +77,16 @@ class UserAuthenticatorDetailsEndpoint(UserEndpoint):
         if interface.interface_id == 'recovery':
             interface.regenerate_codes()
 
+            capture_security_activity(
+                account=user,
+                type='recovery-codes-regenerated',
+                actor=request.user,
+                ip_address=request.META['REMOTE_ADDR'],
+                context={
+                    'authenticator': authenticator,
+                },
+                send_email=True
+            )
         return Response(serialize(interface))
 
     @sudo_required
@@ -104,11 +114,12 @@ class UserAuthenticatorDetailsEndpoint(UserEndpoint):
 
         # Remove a single device and not entire authentication method
         if interface.interface_id == 'u2f' and interface_device_id is not None:
+            device_name = interface.get_device_name(interface_device_id)
             # Can't remove if this is the last device, will return False if so
             if not interface.remove_u2f_device(interface_device_id):
                 return Response(status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
             interface.authenticator.save()
+
             capture_security_activity(
                 account=user,
                 type='mfa-removed',
@@ -116,8 +127,9 @@ class UserAuthenticatorDetailsEndpoint(UserEndpoint):
                 ip_address=request.META['REMOTE_ADDR'],
                 context={
                     'authenticator': authenticator,
+                    'device_name': device_name
                 },
-                send_email=False
+                send_email=True
             )
             return Response(status=status.HTTP_204_NO_CONTENT)
 

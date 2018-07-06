@@ -3,7 +3,7 @@
 import moment from 'moment-timezone';
 
 import {Client} from 'app/api';
-import {COLUMNS} from './data';
+import {COLUMNS, PROMOTED_TAGS} from './data';
 
 const DATE_TIME_FORMAT = 'YYYY-MM-DDTHH:mm:ss';
 
@@ -16,7 +16,7 @@ const DEFAULTS = {
     .subtract(14, 'days')
     .format(DATE_TIME_FORMAT),
   end: moment().format(DATE_TIME_FORMAT),
-  orderby: '-event_id',
+  orderby: '-timestamp',
   limit: 1000,
 };
 
@@ -35,7 +35,9 @@ function applyDefaults(query) {
  */
 export default function createQueryBuilder(initial = {}, organization) {
   const query = applyDefaults(initial);
-  const defaultProjects = organization.projects.map(project => parseInt(project.id, 10));
+  const defaultProjects = organization.projects
+    .filter(projects => projects.isMember)
+    .map(project => parseInt(project.id, 10));
   let tags = [];
 
   return {
@@ -55,9 +57,13 @@ export default function createQueryBuilder(initial = {}, organization) {
         .subtract(90, 'days')
         .format(DATE_TIME_FORMAT),
       end: moment().format(DATE_TIME_FORMAT),
-    }).then(res => {
-      tags = res.data[0].tags_key;
-    });
+    })
+      .then(res => {
+        tags = res.data[0].tags_key.map(tag => ({name: tag, type: 'string'}));
+      })
+      .catch(err => {
+        tags = PROMOTED_TAGS;
+      });
   }
 
   function getInternal() {
@@ -68,7 +74,7 @@ export default function createQueryBuilder(initial = {}, organization) {
     // Default to all projects if none is selected
     const projects = query.projects.length ? query.projects : defaultProjects;
 
-    // Default to all fields if there are none selected, and no aggregation or groupby is specified
+    // Default to all fields if there are none selected, and no aggregation is specified
     const useDefaultFields =
       !query.fields.length && !query.aggregations.length && !query.groupby;
 
@@ -89,9 +95,26 @@ export default function createQueryBuilder(initial = {}, organization) {
   function updateField(field, value) {
     query[field] = value;
 
-    // If an aggregation is added, we need to remove the orderby parameter if it's not in the selected fields
-    if (field === 'aggregations' && value.length > 0) {
-      query.orderby = null;
+    // If there are aggregations, we need to remove or update the orderby parameter
+    // if it's not in the list of selected fields
+    const hasAggregations = query.aggregations.length > 0;
+    const hasFields = query.fields.length > 0;
+    const orderbyField = (query.orderby || '').replace(/^-/, '');
+    const hasOrderFieldInFields = query.fields.includes(orderbyField);
+
+    if (hasAggregations) {
+      // Check for invalid order by parameter
+      if (hasFields && !hasOrderFieldInFields) {
+        query.orderby = query.fields ? query.fields[0] : null;
+      }
+
+      // Disable orderby for aggregations without any summarize fields
+      if (!hasFields) {
+        query.orderby = null;
+      }
+    }
+
+    if (!query.orderby) {
       query.limit = null;
     }
   }
@@ -108,6 +131,6 @@ export default function createQueryBuilder(initial = {}, organization) {
 
   // Get all columns, including tags
   function getColumns() {
-    return [...COLUMNS, ...tags.map(tag => ({name: tag, type: 'string'}))];
+    return [...COLUMNS, ...tags];
   }
 }

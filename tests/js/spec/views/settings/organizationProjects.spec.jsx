@@ -43,7 +43,7 @@ describe('OrganizationProjects', function() {
     );
     expect(wrapper).toMatchSnapshot();
 
-    expect(wrapper.find('.project-name').text()).toBe('Project Name');
+    expect(wrapper.find('.project-name').text()).toBe('project-slug');
 
     expect(projectsGetMock).toHaveBeenCalledTimes(1);
 
@@ -68,9 +68,10 @@ describe('OrganizationProjects', function() {
 
     expect(searchMock).not.toHaveBeenCalled();
 
-    wrapper.find('Input').simulate('change', {target: {value: `${project.slug}`}});
+    wrapper
+      .find('AsyncComponentSearchInput Input')
+      .simulate('change', {target: {value: `${project.slug}`}});
 
-    expect(wrapper.state('searchQuery')).toBe(`${project.slug}`);
     expect(searchMock).toHaveBeenCalled();
     expect(searchMock).toHaveBeenCalledWith(
       `/organizations/${org.slug}/projects/?query=${project.slug}`,

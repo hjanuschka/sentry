@@ -7,11 +7,11 @@ from django.test import RequestFactory
 from time import time
 
 from sentry.integrations.vsts.integration import VstsIntegration
-from sentry.models import Identity, IdentityProvider, Integration
+from sentry.models import ExternalIssue, Identity, IdentityProvider, Integration
 from sentry.testutils import TestCase
 from sentry.utils import json
 
-from .testutils import WORK_ITEM_RESPONSE
+from .testutils import WORK_ITEM_RESPONSE, GET_USERS_RESPONSE
 
 
 class VstsIssueSycnTest(TestCase):
@@ -20,13 +20,10 @@ class VstsIssueSycnTest(TestCase):
         return RequestFactory()
 
     def setUp(self):
-        self.user = self.create_user()
-        self.organization = self.create_organization(owner=self.user)
-
         model = Integration.objects.create(
             provider='vsts',
             external_id='vsts_external_id',
-            name='fabrikam-fiber-inc.visualstudio.com',
+            name='fabrikam-fiber-inc',
             metadata={
                 'domain_name': 'fabrikam-fiber-inc.visualstudio.com',
                 'default_project': '0987654321',
@@ -45,6 +42,15 @@ class VstsIssueSycnTest(TestCase):
             }
         )
         model.add_organization(self.organization.id, identity.id)
+        self.config = {
+            'resolve_status': 'Resolved',
+            'resolve_when': 'Resolved',
+            'regression_status': 'Active',
+            'sync_comments': True,
+            'sync_forward_assignment': True,
+            'sync_reverse_assignment': True,
+        }
+        model.add_project(self.project.id, self.config)
         self.integration = VstsIntegration(model, self.organization.id)
         self.issue_id = 309
 
@@ -114,3 +120,64 @@ class VstsIssueSycnTest(TestCase):
         }
         request = responses.calls[-1].request
         assert request.headers['Content-Type'] == 'application/json'
+
+    @responses.activate
+    def test_sync_assignee_outbound(self):
+        vsts_work_item_id = 5
+        responses.add(
+            responses.PATCH,
+            'https://fabrikam-fiber-inc.visualstudio.com/DefaultCollection/_apis/wit/workitems/%d' % vsts_work_item_id,
+            body=WORK_ITEM_RESPONSE,
+            content_type='application/json',
+        )
+        responses.add(
+            responses.GET,
+            'https://fabrikam-fiber-inc.vssps.visualstudio.com/_apis/graph/users',
+            body=GET_USERS_RESPONSE,
+            content_type='application/json',
+        )
+
+        user = self.create_user('ftotten@vscsi.us')
+        external_issue = ExternalIssue.objects.create(
+            organization_id=self.organization.id,
+            integration_id=self.integration.model.id,
+            key=vsts_work_item_id,
+            title='I\'m a title!',
+            description='I\'m a description.'
+        )
+        self.integration.sync_assignee_outbound(external_issue, user, assign=True)
+        assert len(responses.calls) == 2
+        assert responses.calls[0].request.url == 'https://fabrikam-fiber-inc.vssps.visualstudio.com/_apis/graph/users'
+        assert responses.calls[0].response.status_code == 200
+        assert responses.calls[1].request.url == 'https://fabrikam-fiber-inc.visualstudio.com/DefaultCollection/_apis/wit/workitems/%d' % vsts_work_item_id
+        assert responses.calls[1].response.status_code == 200
+
+    @responses.activate
+    def test_sync_status_outbound(self):
+        vsts_work_item_id = 5
+        responses.add(
+            responses.PATCH,
+            'https://fabrikam-fiber-inc.visualstudio.com/DefaultCollection/_apis/wit/workitems/%d' % vsts_work_item_id,
+            body=WORK_ITEM_RESPONSE,
+            content_type='application/json',
+        )
+        responses.add(
+            responses.GET,
+            'https://fabrikam-fiber-inc.vssps.visualstudio.com/_apis/graph/users',
+            body=GET_USERS_RESPONSE,
+            content_type='application/json',
+        )
+
+        external_issue = ExternalIssue.objects.create(
+            organization_id=self.organization.id,
+            integration_id=self.integration.model.id,
+            key=vsts_work_item_id,
+            title='I\'m a title!',
+            description='I\'m a description.'
+        )
+        self.integration.sync_status_outbound(external_issue, True, self.project.id)
+        assert len(responses.calls) == 1
+        req = responses.calls[0].request
+        assert req.url == 'https://fabrikam-fiber-inc.visualstudio.com/DefaultCollection/_apis/wit/workitems/%d' % vsts_work_item_id
+        assert req.body == '[{"path": "/fields/System.State", "value": "Resolved", "op": "replace"}]'
+        assert responses.calls[0].response.status_code == 200

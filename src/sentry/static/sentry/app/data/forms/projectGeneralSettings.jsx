@@ -68,8 +68,7 @@ export const fields = {
     type: 'array',
     label: t('Team'),
     visible: ({organization}) => {
-      let features = new Set(organization.features);
-      return !features.has('new-teams') && organization.teams.length > 1;
+      return organization.teams.length > 1;
     },
     choices: ({organization}) =>
       organization.teams.filter(o => o.isMember).map(o => [o.slug, o.slug]),
@@ -196,6 +195,11 @@ export const fields = {
   scrapeJavaScript: {
     name: 'scrapeJavaScript',
     type: 'boolean',
+    // if this is off for the organization, it cannot be enabled for the project
+    disabled: ({organization, name}) => !organization[name],
+    disabledReason: ORG_DISABLED_REASON,
+    // `props` are the props given to FormField
+    setValue: (val, props) => props.organization && props.organization[props.name] && val,
     label: t('Enable JavaScript source fetching'),
     help: t('Allow Sentry to scrape missing JavaScript source context when possible'),
   },

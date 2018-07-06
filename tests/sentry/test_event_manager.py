@@ -151,6 +151,47 @@ class EventManagerTest(TransactionTestCase):
         data = manager.normalize()
         assert data['sentry.interfaces.User']['ip_address'] == '127.0.0.1'
 
+    @mock.patch('sentry.interfaces.geo.Geo.from_ip_address')
+    def test_does_geo_from_ip(self, from_ip_address_mock):
+        from sentry.interfaces.geo import Geo
+
+        geo = {
+            'city': 'San Francisco',
+            'country_code': 'US',
+            'region': 'CA',
+        }
+        from_ip_address_mock.return_value = Geo.to_python(geo)
+
+        manager = EventManager(
+            self.make_event(
+                **{
+                    'sentry.interfaces.User': {
+                        'ip_address': '192.168.0.1',
+                    },
+                }
+            )
+        )
+        data = manager.normalize()
+        assert data['sentry.interfaces.User']['ip_address'] == '192.168.0.1'
+        assert data['sentry.interfaces.User']['geo'] == geo
+
+    @mock.patch('sentry.interfaces.geo.geo_by_addr')
+    def test_skips_geo_with_no_result(self, geo_by_addr_mock):
+        geo_by_addr_mock.return_value = None
+
+        manager = EventManager(
+            self.make_event(
+                **{
+                    'sentry.interfaces.User': {
+                        'ip_address': '127.0.0.1',
+                    },
+                }
+            )
+        )
+        data = manager.normalize()
+        assert data['sentry.interfaces.User']['ip_address'] == '127.0.0.1'
+        assert 'geo' not in data['sentry.interfaces.User']
+
     def test_does_default_ip_address_if_present(self):
         manager = EventManager(
             self.make_event(
@@ -488,6 +529,9 @@ class EventManagerTest(TransactionTestCase):
             name='Example',
         )
         integration.add_organization(org.id)
+        integration.add_project(
+            group.project_id, {
+                'resolve_status': 'Resolved', 'resolve_when': 'Resolved'})
         external_issue = ExternalIssue.objects.get_or_create(
             organization_id=org.id,
             integration_id=integration.id,
@@ -548,7 +592,7 @@ class EventManagerTest(TransactionTestCase):
                 )
                 event = manager.save(1)
                 mock_sync_status_outbound.assert_called_once_with(
-                    external_issue, False
+                    external_issue, False, event.group.project_id
                 )
                 assert event.group_id == group.id
 
@@ -880,8 +924,8 @@ class EventManagerTest(TransactionTestCase):
 
         assert dict(event.tags).get('environment') == 'beta'
 
-    @mock.patch('sentry.event_manager.post_process_callback')
-    def test_group_environment(self, mock_post_process_callback):
+    @mock.patch('sentry.event_manager.eventstream.publish')
+    def test_group_environment(self, eventstream_publish):
         release_version = '1.0'
 
         def save_event():
@@ -908,7 +952,7 @@ class EventManagerTest(TransactionTestCase):
 
         # Ensure that the first event in the (group, environment) pair is
         # marked as being part of a new environment.
-        mock_post_process_callback.assert_called_with(
+        eventstream_publish.assert_called_with(
             group=event.group,
             event=event,
             is_new=True,
@@ -916,13 +960,14 @@ class EventManagerTest(TransactionTestCase):
             is_regression=False,
             is_new_group_environment=True,
             primary_hash='acbd18db4cc2f85cedef654fccc4a4d8',
+            skip_consume=False,
         )
 
         event = save_event()
 
         # Ensure that the next event in the (group, environment) pair is *not*
         # marked as being part of a new environment.
-        mock_post_process_callback.assert_called_with(
+        eventstream_publish.assert_called_with(
             group=event.group,
             event=event,
             is_new=False,
@@ -930,6 +975,7 @@ class EventManagerTest(TransactionTestCase):
             is_regression=None,  # XXX: wut
             is_new_group_environment=False,
             primary_hash='acbd18db4cc2f85cedef654fccc4a4d8',
+            skip_consume=False,
         )
 
     def test_default_fingerprint(self):

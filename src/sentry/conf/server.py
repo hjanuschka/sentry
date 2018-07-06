@@ -255,6 +255,7 @@ INSTALLED_APPS = (
     'sentry.lang.javascript', 'sentry.lang.native', 'sentry.plugins.sentry_interface_types',
     'sentry.plugins.sentry_mail', 'sentry.plugins.sentry_urls', 'sentry.plugins.sentry_useragents',
     'sentry.plugins.sentry_webhooks', 'social_auth', 'sudo', 'sentry.tagstore',
+    'sentry.eventstream',
 )
 
 import django
@@ -438,6 +439,7 @@ CELERY_IMPORTS = (
     'sentry.tasks.scheduler', 'sentry.tasks.signals', 'sentry.tasks.store', 'sentry.tasks.unmerge',
     'sentry.tasks.symcache_update', 'sentry.tasks.servicehooks',
     'sentry.tagstore.tasks', 'sentry.tasks.assemble', 'sentry.tasks.integrations',
+    'sentry.tasks.files',
 )
 CELERY_QUEUES = [
     Queue('activity.notify', routing_key='activity.notify'),
@@ -460,6 +462,7 @@ CELERY_QUEUES = [
     Queue('events.reprocessing.process_event', routing_key='events.reprocessing.process_event'),
     Queue('events.reprocess_events', routing_key='events.reprocess_events'),
     Queue('events.save_event', routing_key='events.save_event'),
+    Queue('files.delete', routing_key='files.delete'),
     Queue('integrations', routing_key='integrations'),
     Queue('merge', routing_key='merge'),
     Queue('options', routing_key='options'),
@@ -748,9 +751,10 @@ SENTRY_FEATURES = {
     'auth:register': True,
     'organizations:api-keys': False,
     'organizations:create': True,
+    'organizations:event-attachments': False,
     'organizations:repos': True,
     'organizations:sso': True,
-    'organizations:sso-saml2': False,
+    'organizations:sso-saml2': True,
     'organizations:sso-rippling': False,
     'organizations:group-unmerge': False,
     'organizations:github-apps': False,
@@ -764,6 +768,7 @@ SENTRY_FEATURES = {
     'organizations:unreleased-changes': False,
     'organizations:suggested-commits': True,
     'organizations:relay': False,
+    'organizations:health': False,
     'projects:global-events': False,
     'projects:plugins': True,
     'projects:dsym': False,
@@ -982,6 +987,9 @@ SENTRY_TSDB_OPTIONS = {}
 
 SENTRY_NEWSLETTER = 'sentry.newsletter.base.Newsletter'
 SENTRY_NEWSLETTER_OPTIONS = {}
+
+SENTRY_EVENTSTREAM = 'sentry.eventstream.base.EventStream'
+SENTRY_EVENTSTREAM_OPTIONS = {}
 
 # rollups must be ordered from highest granularity to lowest
 SENTRY_TSDB_ROLLUPS = (
@@ -1257,7 +1265,7 @@ SENTRY_DEFAULT_INTEGRATIONS = (
 SENTRY_INTERNAL_INTEGRATIONS = (
     'bitbucket',
     'github',
-    'github-enterprise',
+    'github_enterprise',
     'jira',
     'vsts',
 )

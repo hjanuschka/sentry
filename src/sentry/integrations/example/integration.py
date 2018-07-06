@@ -55,7 +55,7 @@ class ExampleIntegration(Integration, IssueSyncMixin):
             'description': 'This is a test external issue description',
         }
 
-    def get_issue(self, issue_id):
+    def get_issue(self, issue_id, **kwargs):
         return {
             'key': issue_id,
             'title': 'This is a test external issue title',
@@ -65,7 +65,7 @@ class ExampleIntegration(Integration, IssueSyncMixin):
     def sync_assignee_outbound(self, external_issue, user, assign=True, **kwargs):
         pass
 
-    def sync_status_outbound(external_issue, is_resolved):
+    def sync_status_outbound(self, external_issue, is_resolved, project_id):
         pass
 
 

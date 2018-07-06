@@ -13,9 +13,21 @@ from sentry.testutils import APITestCase, TestCase
 class VstsIntegrationProviderTest(TestCase):
     def setUp(self):
         self.integration = VstsIntegrationProvider()
+        responses.add(
+            responses.GET,
+            'https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=1.0',
+            json={
+                'id': 'user1',
+                'displayName': 'Sentry User',
+                'emailAddress': 'sentry@user.com',
+            },
+        )
 
+    @responses.activate
     def test_build_integration(self):
         state = {
+            'account': {'AccountName': 'sentry', 'AccountId': '123435'},
+            'instance': 'sentry.visualstudio.com',
             'identity': {
                 'data': {
                     'access_token': 'xxx-xxxx',
@@ -23,19 +35,17 @@ class VstsIntegrationProviderTest(TestCase):
                     'refresh_token': 'rxxx-xxxx',
                     'token_type': 'jwt-bearer',
                 },
-                'account': {'AccountName': 'sentry', 'AccountId': '123435'},
-                'instance': 'sentry.visualstudio.com',
             },
         }
         integration_dict = self.integration.build_integration(state)
         assert integration_dict['name'] == 'sentry'
         assert integration_dict['external_id'] == '123435'
-        assert integration_dict['metadata']['scopes'] == list(VSTSIdentityProvider.oauth_scopes)
         assert integration_dict['metadata']['domain_name'] == 'sentry.visualstudio.com'
 
         assert integration_dict['user_identity']['type'] == 'vsts'
-        assert integration_dict['user_identity']['external_id'] == '123435'
-        assert integration_dict['user_identity']['scopes'] == []
+        assert integration_dict['user_identity']['external_id'] == 'user1'
+        assert integration_dict['user_identity']['scopes'] == sorted(
+            VSTSIdentityProvider.oauth_scopes)
 
         assert integration_dict['user_identity']['data']['access_token'] == 'xxx-xxxx'
         assert isinstance(integration_dict['user_identity']['data']['expires'], int)
@@ -135,30 +145,12 @@ class VstsIntegrationTest(APITestCase):
     @responses.activate
     def test_get_project_config(self):
         fields = self.integration.get_project_config()
-        assert len(fields) == 1
-        project_field = fields[0]
-        assert project_field['name'] == 'default_project'
-        assert project_field['disabled'] is False
-        assert project_field['choices'] == self.projects
-        assert project_field['initial'] == ('', '')
-
-    @responses.activate
-    def test_get_project_config_initial(self):
-        self.integration.project_integration.config = {'default_project': self.projects[1][0]}
-        self.integration.project_integration.save()
-        fields = self.integration.get_project_config()
-        assert len(fields) == 1
-        project_field = fields[0]
-        assert project_field['name'] == 'default_project'
-        assert project_field['disabled'] is False
-        assert project_field['choices'] == self.projects
-        assert project_field['initial'] == self.projects[1]
-
-    def test_get_project_config_failure(self):
-        fields = self.integration.get_project_config()
-        assert len(fields) == 1
-        project_field = fields[0]
-        assert project_field['name'] == 'default_project'
-        assert project_field['disabled'] is True
-        assert project_field['choices'] == []
-        assert project_field['initial'] == ('', '')
+        assert len(fields) == 6
+        names = [
+            'resolve_status',
+            'resolve_when',
+            'regression_status',
+            'sync_comments',
+            'sync_forward_assignment',
+            'sync_reverse_assignment']
+        assert [field['name'] for field in fields] == names

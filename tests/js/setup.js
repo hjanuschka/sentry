@@ -10,6 +10,9 @@ import ConfigStore from 'app/stores/configStore';
 import theme from 'app/utils/theme';
 
 import RoleList from './fixtures/roleList';
+import Release from './fixtures/release';
+import {AsanaPlugin, AsanaCreate, AsanaAutocomplete} from './fixtures/asana';
+import {VstsPlugin, VstsCreate} from './fixtures/vsts-old';
 
 jest.mock('lodash/debounce', () => jest.fn(fn => fn));
 jest.mock('app/utils/recreateRoute');
@@ -19,7 +22,11 @@ jest.mock('scroll-to-element', () => {});
 jest.mock('react-router', () => {
   const ReactRouter = require.requireActual('react-router');
   return {
+    IndexRedirect: ReactRouter.IndexRedirect,
+    IndexRoute: ReactRouter.IndexRoute,
     Link: ReactRouter.Link,
+    Redirect: ReactRouter.Redirect,
+    Route: ReactRouter.Route,
     withRouter: ReactRouter.withRouter,
     browserHistory: {
       push: jest.fn(),
@@ -660,6 +667,7 @@ window.TestStubs = {
         id: 'active',
         name: 'active',
       },
+      scrapeJavaScript: true,
       features: [],
       onboardingTasks: [],
       teams: [],
@@ -871,6 +879,8 @@ window.TestStubs = {
     };
   },
 
+  Release,
+
   RoleList,
 
   Searches: params => [
@@ -1067,6 +1077,15 @@ window.TestStubs = {
     comments: 'Something bad happened',
     issue: TestStubs.Group(),
   }),
+
+  /**
+   * Plugins
+   */
+  AsanaPlugin,
+  AsanaCreate,
+  AsanaAutocomplete,
+  VstsPlugin,
+  VstsCreate,
 };
 
 // this is very commonly used, so expose it globally
